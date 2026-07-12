@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Map Route Animation — MapLibre + OpenFreeMap</title>
+
+<!-- MapLibre GL JS (gratis, open source) -->
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet" />
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<!-- Turf.js buat hitung panjang & potong garis -->
+<script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --acc:#4f9dff; --txt:#e7ebf3; --mut:#8b94a7; }
+  * { box-sizing:border-box; }
+  html,body { margin:0; height:100%; font-family:system-ui,-apple-system,Segoe UI,Roboto,sans-serif; background:var(--bg); color:var(--txt); }
+  #app { display:flex; height:100vh; }
+  #map { flex:1; position:relative; }
+  #side { width:320px; background:var(--panel); border-left:1px solid var(--line); display:flex; flex-direction:column; overflow-y:auto; }
+  .head { padding:14px 16px; border-bottom:1px solid var(--line); }
+  .head h1 { font-size:15px; margin:0 0 4px; }
+  .head p { font-size:11px; color:var(--mut); margin:0; line-height:1.4; }
+  .sec { padding:12px 16px; border-bottom:1px solid var(--line); }
+  .sec h2 { font-size:11px; text-transform:uppercase; letter-spacing:.06em; color:var(--mut); margin:0 0 8px; }
+  textarea { width:100%; height:88px; background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px; font:12px/1.4 ui-monospace,Menlo,monospace; resize:vertical; }
+  .row { display:flex; gap:8px; flex-wrap:wrap; }
+  button { background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px 10px; font-size:12px; cursor:pointer; transition:.15s; }
+  button:hover { border-color:var(--acc); }
+  button.primary { background:var(--acc); border-color:var(--acc); color:#04122b; font-weight:600; }
+  button.rec { background:#ff4d5e; border-color:#ff4d5e; color:#2b0409; font-weight:600; }
+  button:disabled { opacity:.4; cursor:not-allowed; }
+  #list { max-height:260px; overflow-y:auto; border:1px solid var(--line); border-radius:8px; }
+  #list:empty { display:none; }
+  .wp { display:flex; align-items:center; gap:8px; padding:9px 16px; border-bottom:1px solid var(--line); font-size:12px; background:var(--panel); }
+  .wp.drag { opacity:.4; }
+  .wp.over { box-shadow: inset 0 2px 0 var(--acc); }
+  .wp .grip { color:var(--mut); cursor:grab; font-size:14px; user-select:none; }
+  .wp .grip:active { cursor:grabbing; }
+  .wp .idx { width:20px; height:20px; border-radius:50%; background:var(--acc); color:#04122b; display:flex; align-items:center; justify-content:center; font-size:10px; font-weight:700; flex-shrink:0; }
+  .wp .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .wp .co { color:var(--mut); font:10px ui-monospace,monospace; }
+  .wp .x { color:var(--mut); cursor:pointer; padding:2px 4px; }
+  .wp .x:hover { color:#ff4d5e; }
+  .field { display:flex; flex-direction:column; gap:6px; margin-bottom:10px; }
+  .field label { font-size:11px; color:var(--mut); display:flex; justify-content:space-between; }
+  input[type=range] { width:100%; accent-color:var(--acc); }
+  select { width:100%; background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px; font-size:12px; cursor:pointer; }
+  .seg { display:flex; background:var(--bg); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .seg button { border:0; border-radius:0; flex:1; }
+  .seg.vseg { flex-direction:column; }
+  .seg.vseg button { border-bottom:1px solid var(--line); text-align:left; }
+  .seg.vseg button:last-child { border-bottom:0; }
+  .seg button.on { background:var(--acc); color:#04122b; font-weight:600; }
+  .veh { display:grid; grid-template-columns:1fr 1fr 1fr 1fr; gap:6px; }
+  .veh button { display:flex; flex-direction:column; align-items:center; gap:3px; padding:8px 2px; font-size:18px; line-height:1; }
+  .veh button span { font-size:10px; color:var(--mut); }
+  .veh button.on { background:var(--acc); border-color:var(--acc); }
+  .veh button.on span { color:#04122b; font-weight:600; }
+  .hint { font-size:10px; color:var(--mut); margin-top:6px; line-height:1.4; }
+  #status { position:absolute; left:12px; bottom:12px; background:rgba(0,0,0,.6); backdrop-filter:blur(6px); padding:6px 12px; border-radius:20px; font-size:11px; color:#fff; display:none; }
+  #status.show { display:block; }
+</style>
+</head>
+<body>
+<div id="app">
+  <div id="map"><div id="status"></div></div>
+  <div id="side">
+    <div class="head">
+      <h1>Route Animation</h1>
+      <p>Klik peta buat nambah titik, atau paste koordinat. Peta asli via OpenFreeMap — gratis, tanpa API key.</p>
+    </div>
+
+    <div class="sec">
+      <h2>Tambah titik (paste koordinat)</h2>
+      <textarea id="paste" placeholder="Paste link Google Maps (nama & koordinat auto), ATAU tulis manual 'Nama, lat, lng' — satu per baris. Contoh:
+https://www.google.com/maps/place/Sate+Maranggi/@-6.65,106.88,17z/...
+Kafe A, -6.5971, 106.8060"></textarea>
+      <div class="row" style="margin-top:8px">
+        <button id="addPaste">Tambah dari teks</button>
+        <button id="clear">Hapus semua</button>
+      </div>
+      <div class="hint">Paste link Google Maps langsung (buka lokasi di Maps → Share/Bagikan → Copy link). Bisa juga klik kanan lokasi → copy koordinat.</div>
+    </div>
+
+    <div class="sec">
+      <h2 id="listHead">Daftar titik</h2>
+      <div id="list"></div>
+      <div class="hint" id="listHint">Belum ada titik. Paste koordinat di atas atau klik peta. Nanti <b>tahan ⠿ lalu geser</b> buat urutkan.</div>
+    </div>
+
+    <div class="sec">
+      <h2>Kendaraan</h2>
+      <div class="veh" id="veh">
+        <button data-v="motor">🏍️<span>Motor</span></button>
+        <button data-v="mobil" class="on">🚗<span>Mobil</span></button>
+        <button data-v="kereta">🚆<span>Kereta</span></button>
+        <button data-v="pesawat">✈️<span>Pesawat</span></button>
+      </div>
+      <div class="hint" id="vehHint">Mobil: ikut jalan asli (OSRM). Ikon kendaraan jalan di sepanjang rute.</div>
+    </div>
+
+    <div class="sec">
+      <h2>Tekstur peta</h2>
+      <select id="basemap">
+        <option value="voyager">Voyager — detail berwarna (default)</option>
+        <option value="light">Light — minimalis terang</option>
+        <option value="dark">Dark — gelap</option>
+        <option value="satellite">Satellite — citra satelit</option>
+        <option value="osm">OSM klasik — peta OpenStreetMap</option>
+        <option value="topo">Topo — kontur/topografi</option>
+      </select>
+    </div>
+
+    <div class="sec">
+      <h2>Gaya animasi</h2>
+      <div class="seg vseg" id="anim">
+        <button data-a="follow" class="on">Follow — kamera ngikutin garis</button>
+        <button data-a="cinematic">Cinematic 3D — miring + muter</button>
+        <button data-a="overview">Overview — lihat rute utuh</button>
+      </div>
+      <div class="hint" id="animHint">Follow: kamera nempel di ujung garis yang lagi kegambar.</div>
+    </div>
+
+    <div class="sec">
+      <div class="field">
+        <label>Kecepatan animasi <span id="spdV">1.0×</span></label>
+        <input type="range" id="spd" min="0.3" max="3" step="0.1" value="1">
+      </div>
+      <div class="field">
+        <label>Zoom kamera <span id="zoomV">14</span></label>
+        <input type="range" id="zoom" min="4" max="17" step="0.5" value="14">
+      </div>
+      <div class="field">
+        <label>Kemiringan (pitch) <span id="pitchV">0°</span></label>
+        <input type="range" id="pitch" min="0" max="70" step="5" value="0">
+      </div>
+    </div>
+
+    <div class="sec">
+      <div class="row">
+        <button id="play" class="primary" style="flex:1">▶ Play</button>
+        <button id="rec" class="rec">● Record</button>
+      </div>
+      <div class="hint">Klik Record dulu → lalu Play → klik Record lagi buat stop &amp; download WebM.</div>
+    </div>
+  </div>
+</div>
+
+<script>
+const OSRM = "https://router.project-osrm.org/route/v1/driving/";
+// PENTING: fonts.openmaptiles.org balikin HTML (bukan glyph) -> teks jadi kotak hitam.
+// OpenFreeMap fonts balikin glyph PBF valid.
+const GLYPHS = 'https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf';
+
+// Semua basemap = raster (gratis, CORS ok). Ganti tekstur cuma tukar tile,
+// TANPA setStyle -> overlay (titik/rute/ikon) gak pernah ke-wipe & dijamin render.
+const BASEMAPS = {
+  voyager:   { url:'https://a.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}.png', attr:'© OpenStreetMap © CARTO' },
+  light:     { url:'https://a.basemaps.cartocdn.com/light_all/{z}/{x}/{y}.png',           attr:'© OpenStreetMap © CARTO' },
+  dark:      { url:'https://a.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}.png',            attr:'© OpenStreetMap © CARTO' },
+  satellite: { url:'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', attr:'Esri, Maxar, Earthstar' },
+  osm:       { url:'https://tile.openstreetmap.org/{z}/{x}/{y}.png',                      attr:'© OpenStreetMap contributors' },
+  topo:      { url:'https://a.tile.opentopomap.org/{z}/{x}/{y}.png',                      attr:'© OpenTopoMap (CC-BY-SA)' }
+};
+const DEFAULT_BASEMAP = 'voyager';
+
+const statusEl = document.getElementById('status');
+function status(t){ if(!t){statusEl.classList.remove('show');return;} statusEl.textContent=t; statusEl.classList.add('show'); }
+
+const map = new maplibregl.Map({
+  container: 'map',
+  style: {
+    version: 8,
+    glyphs: GLYPHS,
+    sources: { base: { type:'raster', tiles:[BASEMAPS[DEFAULT_BASEMAP].url], tileSize:256, attribution: BASEMAPS[DEFAULT_BASEMAP].attr } },
+    layers: [{ id:'base-layer', type:'raster', source:'base' }]
+  },
+  center: [106.80, -6.597],
+  zoom: 12,
+  pitch: 0,                     // default rata biar gak keliatan "melayang" pas tile loading
+  maxPitch: 85,                 // default MapLibre cuma 60; naikin biar slider 70 kepakai
+  preserveDrawingBuffer: true   // WAJIB biar canvas bisa di-record
+});
+map.addControl(new maplibregl.NavigationControl(), 'top-left');
+
+let waypoints = [];   // {name, lng, lat}
+// kendaraan menentukan bentuk rute + ikon yang jalan di peta
+const VEHICLES = {
+  motor:   { emoji:'🏍️', route:'road',     hint:'Motor: ikut jalan asli (OSRM).' },
+  mobil:   { emoji:'🚗', route:'road',     hint:'Mobil: ikut jalan asli (OSRM).' },
+  kereta:  { emoji:'🚆', route:'straight', hint:'Kereta: garis lurus antar titik (rel gak ada di data).' },
+  pesawat: { emoji:'✈️', route:'curve',    hint:'Pesawat: garis lengkung cinematic antar titik.' }
+};
+let vehicle = 'mobil';
+let animStyle = 'follow';
+let playing = false;
+let cancelReq = false;
+
+/* ---------- sources & layers (dipasang ulang tiap ganti style) ---------- */
+let curLine = [];   // simpan garis terakhir biar gak ilang pas ganti tekstur
+function addOverlays(){
+  if(!map.getSource('route')){
+    map.addSource('route', { type:'geojson', data:{ type:'Feature', geometry:{ type:'LineString', coordinates:curLine } } });
+    map.addLayer({ id:'route-line', type:'line', source:'route',
+      paint:{ 'line-color':'#4f9dff', 'line-width':4, 'line-opacity':.95 },
+      layout:{ 'line-cap':'round', 'line-join':'round' } });
+  }
+  if(!map.getSource('pts')){
+    map.addSource('pts', { type:'geojson', data:emptyFC() });
+    // lingkaran besar + halo putih tebal biar kontras di semua tekstur (termasuk satelit)
+    map.addLayer({ id:'pts-dot', type:'circle', source:'pts',
+      paint:{ 'circle-radius':12, 'circle-color':'#ff2d55', 'circle-stroke-width':3, 'circle-stroke-color':'#ffffff', 'circle-opacity':0.95 } });
+    // nomor urut di dalam lingkaran
+    map.addLayer({ id:'pts-num', type:'symbol', source:'pts',
+      layout:{ 'text-field':['get','idx'], 'text-font':['Noto Sans Bold'], 'text-size':13, 'text-allow-overlap':true },
+      paint:{ 'text-color':'#ffffff' } });
+    // nama di atas lingkaran
+    map.addLayer({ id:'pts-label', type:'symbol', source:'pts',
+      layout:{ 'text-field':['get','name'], 'text-font':['Noto Sans Bold'],
+        'text-size':13, 'text-offset':[0,-1.9], 'text-anchor':'bottom',
+        'text-allow-overlap':false, 'text-optional':true }, // label tabrakan disembunyiin, bukan numpuk
+      paint:{ 'text-color':'#ffffff', 'text-halo-color':'#000000', 'text-halo-width':1.8 } });
+  }
+  if(!map.getSource('veh')){
+    map.addSource('veh', { type:'geojson', data:emptyFC() });
+    setVehicleIcon();
+    map.addLayer({ id:'veh-layer', type:'symbol', source:'veh',
+      layout:{ 'icon-image':'vehicle', 'icon-size':1, 'icon-allow-overlap':true, 'icon-ignore-placement':true } });
+  }
+  redraw();
+}
+
+// gambar emoji kendaraan ke canvas -> jadi image di peta (ikut ke-record)
+function makeEmojiImage(emoji, size=64){
+  const c = document.createElement('canvas'); c.width = c.height = size;
+  const ctx = c.getContext('2d');
+  ctx.font = Math.floor(size*0.78) + 'px system-ui, "Apple Color Emoji", "Segoe UI Emoji", serif';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(emoji, size/2, size/2 + size*0.04);
+  return ctx.getImageData(0, 0, size, size);
+}
+function setVehicleIcon(){
+  if(!map.isStyleLoaded()) return;
+  const img = makeEmojiImage(VEHICLES[vehicle].emoji);
+  if(map.hasImage('vehicle')) map.updateImage('vehicle', img);
+  else map.addImage('vehicle', img);
+}
+map.on('load', addOverlays);
+
+/* ---------- pilihan tekstur peta ---------- */
+// Cukup tukar tile pada source 'base'. Overlay tetap utuh -> gak ada bug render.
+function setBasemap(key){
+  const b = BASEMAPS[key]; if(!b) return;
+  const src = map.getSource('base');
+  if(src && src.setTiles) src.setTiles([b.url]);
+}
+
+map.on('click', (e) => {
+  if(playing) return;
+  const name = prompt('Nama titik:', 'Titik ' + (waypoints.length+1));
+  if(name === null) return;
+  waypoints.push({ name: name || ('Titik '+(waypoints.length+1)), lng:e.lngLat.lng, lat:e.lngLat.lat });
+  redraw(); fitAll();
+});
+
+/* ---------- helpers ---------- */
+function emptyLine(){ return { type:'Feature', geometry:{ type:'LineString', coordinates:[] } }; }
+function emptyFC(){ return { type:'FeatureCollection', features:[] }; }
+
+function pointsFC(){
+  return { type:'FeatureCollection', features: waypoints.map((w,i) => ({
+    type:'Feature', properties:{ name:w.name, idx:String(i+1) }, geometry:{ type:'Point', coordinates:[w.lng,w.lat] }
+  })) };
+}
+
+function redraw(){
+  if(map.getSource('pts')){ map.getSource('pts').setData(pointsFC()); map.triggerRepaint(); }
+  renderList();
+}
+
+let dragFrom = null;
+function renderList(){
+  const el = document.getElementById('list');
+  el.innerHTML = '';
+  const head = document.getElementById('listHead');
+  const hint = document.getElementById('listHint');
+  if(head) head.textContent = 'Daftar titik' + (waypoints.length ? ` (${waypoints.length})` : '');
+  if(hint) hint.innerHTML = waypoints.length
+    ? 'Urutkan: <b>tahan ⠿ lalu geser</b>. Klik ✕ buat hapus.'
+    : 'Belum ada titik. Paste koordinat di atas atau klik peta.';
+  waypoints.forEach((w,i) => {
+    const d = document.createElement('div'); d.className='wp'; d.draggable = !playing;
+    d.innerHTML = `<span class="grip" title="tahan & geser buat urutin">⠿</span>
+      <span class="idx">${i+1}</span>
+      <span class="nm">${escapeHtml(w.name)}<div class="co">${w.lat.toFixed(4)}, ${w.lng.toFixed(4)}</div></span>
+      <span class="x" title="hapus">✕</span>`;
+    d.querySelector('.x').onclick = () => { if(playing) return; waypoints.splice(i,1); redraw(); };
+
+    // drag-to-reorder
+    d.addEventListener('dragstart', e => { dragFrom = i; d.classList.add('drag'); e.dataTransfer.effectAllowed='move'; });
+    d.addEventListener('dragend', () => { d.classList.remove('drag'); document.querySelectorAll('.wp').forEach(x=>x.classList.remove('over')); });
+    d.addEventListener('dragover', e => { e.preventDefault(); d.classList.add('over'); });
+    d.addEventListener('dragleave', () => d.classList.remove('over'));
+    d.addEventListener('drop', e => {
+      e.preventDefault();
+      if(dragFrom===null || dragFrom===i) return;
+      const [moved] = waypoints.splice(dragFrom,1);
+      waypoints.splice(i,0,moved);
+      dragFrom = null; redraw();
+    });
+    el.appendChild(d);
+  });
+}
+function escapeHtml(s){ return s.replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c])); }
+
+function fitAll(){
+  if(waypoints.length < 1) return;
+  const b = new maplibregl.LngLatBounds();
+  waypoints.forEach(w => b.extend([w.lng,w.lat]));
+  // maxZoom cegah zoom kelewat dalam (ke area tanpa tile) saat titik berdekatan
+  if(waypoints.length === 1) map.easeTo({ center:[waypoints[0].lng,waypoints[0].lat], zoom:15 });
+  else map.fitBounds(b, { padding:80, maxZoom:16, duration:800 });
+}
+
+/* garis lengkung: bezier kuadratik dengan offset tegak lurus */
+function curveBetween(a, b){
+  const mid = [(a[0]+b[0])/2, (a[1]+b[1])/2];
+  const dx = b[0]-a[0], dy = b[1]-a[1];
+  const off = 0.18; // lengkung
+  const ctrl = [ mid[0] - dy*off, mid[1] + dx*off ];
+  const pts = [];
+  const N = 64;
+  for(let t=0;t<=N;t++){
+    const u=t/N, iu=1-u;
+    pts.push([
+      iu*iu*a[0] + 2*iu*u*ctrl[0] + u*u*b[0],
+      iu*iu*a[1] + 2*iu*u*ctrl[1] + u*u*b[1]
+    ]);
+  }
+  return pts;
+}
+
+async function roadBetween(a, b){
+  const url = `${OSRM}${a[0]},${a[1]};${b[0]},${b[1]}?overview=full&geometries=geojson`;
+  const r = await fetch(url);
+  if(!r.ok) throw new Error('OSRM '+r.status);
+  const j = await r.json();
+  if(!j.routes || !j.routes.length) throw new Error('no route');
+  return j.routes[0].geometry.coordinates;
+}
+
+/* garis lurus dengan banyak titik (biar slicing animasi mulus) */
+function straightBetween(a, b){
+  const pts = [], N = 48;
+  for(let t=0;t<=N;t++){ const u=t/N; pts.push([ a[0]+(b[0]-a[0])*u, a[1]+(b[1]-a[1])*u ]); }
+  return pts;
+}
+
+/* bangun seluruh koordinat rute (gabungan semua segmen) sesuai kendaraan */
+async function buildRoute(){
+  const routeType = VEHICLES[vehicle].route;
+  let coords = [];
+  for(let i=0;i<waypoints.length-1;i++){
+    const a=[waypoints[i].lng,waypoints[i].lat], b=[waypoints[i+1].lng,waypoints[i+1].lat];
+    let seg;
+    if(routeType === 'road'){
+      status('Ambil rute jalan…');
+      try { seg = await roadBetween(a,b); }
+      catch(err){ status('Routing gagal, pakai garis lurus'); seg = straightBetween(a,b); }
+    } else if(routeType === 'curve'){
+      seg = curveBetween(a,b);
+    } else {
+      seg = straightBetween(a,b);
+    }
+    if(i>0) seg = seg.slice(1); // hindari titik dobel
+    coords = coords.concat(seg);
+  }
+  return coords;
+}
+
+/* ---------- animation ---------- */
+function setPlayBtn(isPlaying){
+  const b = document.getElementById('play');
+  if(isPlaying){ b.textContent = '■ Batalin'; b.classList.remove('primary'); b.classList.add('rec'); }
+  else { b.textContent = '▶ Play'; b.classList.add('primary'); b.classList.remove('rec'); }
+}
+
+async function play(){
+  if(playing){ cancelReq = true; return; }        // klik ke-2 = batalin
+  if(waypoints.length < 2){ status('Butuh minimal 2 titik'); return; }
+  if(!map.isStyleLoaded() || !map.getSource('route')){ status('Peta lagi loading, coba lagi sebentar'); return; }
+  playing = true; cancelReq = false;
+  setPlayBtn(true);
+  renderList(); // matiin draggable selama play
+
+  const full = await buildRoute();
+  if(cancelReq) return finishPlay('Dibatalin');
+
+  const line = turf.lineString(full);
+  const total = turf.length(line, { units:'kilometers' });
+  const speed = parseFloat(document.getElementById('spd').value);
+  const zoom = parseFloat(document.getElementById('zoom').value);
+  const basePitch = parseFloat(document.getElementById('pitch').value);
+  const durMs = Math.max(3000, (total * 2600) / speed);
+
+  status('Animasi…');
+  curLine = []; map.getSource('route').setData(emptyLine());
+  setVehicleIcon(); // pastikan ikon sesuai kendaraan terpilih
+
+  if(animStyle === 'overview'){
+    // kamera diam, lihat rute utuh, garis kegambar
+    const b = new maplibregl.LngLatBounds(); full.forEach(c=>b.extend(c));
+    map.fitBounds(b, { padding:80, pitch:basePitch, bearing:0, duration:1200 });
+    await wait(1300);
+  } else {
+    const startPitch = animStyle === 'cinematic' ? Math.max(basePitch, 55) : basePitch;
+    await flyToP(full[0], zoom, startPitch, 1000);
+  }
+  if(cancelReq) return finishPlay('Dibatalin');
+
+  const t0 = performance.now();
+  let lastHead = full[0], curBearing = map.getBearing();
+  await new Promise(res => {
+    function frame(now){
+      if(cancelReq) return res();
+      let p = (now - t0) / durMs;
+      if(p >= 1) p = 1;
+      const dist = total * p;
+      const drawn = dist <= 0 ? [full[0]] : turf.lineSliceAlong(line, 0, dist, { units:'kilometers' }).geometry.coordinates;
+      curLine = drawn;
+      map.getSource('route').setData({ type:'Feature', geometry:{ type:'LineString', coordinates:drawn } });
+      const head = drawn[drawn.length-1];
+      // ikon kendaraan mengikuti ujung garis
+      if(map.getSource('veh')) map.getSource('veh').setData({ type:'Feature', geometry:{ type:'Point', coordinates:head } });
+
+      if(animStyle === 'follow'){
+        map.jumpTo({ center:head, zoom, pitch:basePitch, bearing:0 });
+      } else if(animStyle === 'cinematic'){
+        // arah kamera pakai LOOK-AHEAD: lihat arah agak jauh ke depan,
+        // bukan antar-titik terdekat -> tikungan rapat gak bikin patah2.
+        try {
+          const lookKm = Math.max(0.25, total * 0.06);
+          const aheadDist = Math.min(total, dist + lookKm);
+          const aheadPt = turf.along(line, aheadDist, { units:'kilometers' }).geometry.coordinates;
+          const tgt = turf.bearing(turf.point(head), turf.point(aheadPt));
+          // rotasi halus (lerp kecil) biar gak nyentak
+          if(!isNaN(tgt)) curBearing += angleDelta(curBearing, tgt) * 0.05;
+        } catch(e){}
+        map.jumpTo({ center:head, zoom, pitch:Math.max(basePitch,55), bearing:curBearing });
+      }
+      // overview: kamera dibiarkan (tidak di-jumpTo)
+
+      lastHead = head;
+      if(p < 1) requestAnimationFrame(frame); else res();
+    }
+    requestAnimationFrame(frame);
+  });
+
+  finishPlay(cancelReq ? 'Dibatalin' : 'Selesai');
+}
+
+function finishPlay(msg){
+  playing = false; cancelReq = false;
+  setPlayBtn(false);
+  if(map.getSource('veh')) map.getSource('veh').setData(emptyFC()); // sembunyikan ikon
+  renderList();
+  status(msg); setTimeout(()=>status(''), 1500);
+}
+
+function wait(ms){ return new Promise(r=>setTimeout(r,ms)); }
+// selisih sudut terpendek (-180..180)
+function angleDelta(from, to){ let d = (to - from) % 360; if(d>180) d-=360; if(d<-180) d+=360; return d; }
+
+function flyToP(center, zoom, pitch, duration){
+  return new Promise(res => {
+    map.flyTo({ center, zoom, pitch, duration, essential:true });
+    map.once('moveend', res);
+    setTimeout(res, duration+400);
+  });
+}
+
+/* ---------- recording ---------- */
+let recorder=null, chunks=[], recExt='webm';
+// cari format yang didukung browser (Chrome=webm, Safari=mp4)
+function pickMime(){
+  if(typeof MediaRecorder === 'undefined') return null;
+  const cands = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4;codecs=h264','video/mp4'];
+  for(const c of cands){ if(MediaRecorder.isTypeSupported(c)) return c; }
+  return ''; // biarin browser pilih default
+}
+function toggleRec(){
+  const btn = document.getElementById('rec');
+  if(recorder && recorder.state !== 'inactive'){ recorder.stop(); return; }
+
+  const canvas = map.getCanvas();
+  if(!canvas.captureStream){ status('Browser ini gak dukung rekam. Pakai Chrome.'); return; }
+  const mime = pickMime();
+  if(mime === null){ status('Browser ini gak dukung MediaRecorder. Pakai Chrome.'); return; }
+
+  let stream;
+  try { stream = canvas.captureStream(30); }
+  catch(e){ status('Gagal akses canvas buat rekam'); return; }
+
+  chunks = [];
+  recExt = (mime && mime.indexOf('mp4') >= 0) ? 'mp4' : 'webm';
+  try {
+    recorder = mime ? new MediaRecorder(stream, { mimeType:mime, videoBitsPerSecond: 8_000_000 })
+                    : new MediaRecorder(stream);
+  } catch(e){ status('Rekam gak didukung di browser ini'); return; }
+
+  recorder.ondataavailable = e => { if(e.data && e.data.size) chunks.push(e.data); };
+  recorder.onstop = () => {
+    const blob = new Blob(chunks, { type: recExt==='mp4' ? 'video/mp4' : 'video/webm' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'route-animation.' + recExt; a.click();
+    setTimeout(()=>URL.revokeObjectURL(url), 4000);
+    btn.textContent = '● Record';
+    status('Video tersimpan (.' + recExt + ')');
+    setTimeout(()=>status(''),2000);
+  };
+  recorder.start();
+  btn.textContent = '■ Stop & Save';
+  status('Merekam… klik Play');
+}
+
+/* ---------- UI wiring ---------- */
+/* Ekstrak nama + koordinat dari URL Google Maps.
+   Prioritas titik: !3d<lat>!4d<lng> (lokasi place asli) > @lat,lng (center view) > q=lat,lng */
+function parseGmaps(url){
+  let lat, lng, name;
+  // koordinat place asli (paling akurat)
+  let m = url.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if(m){ lat=parseFloat(m[1]); lng=parseFloat(m[2]); }
+  // fallback: @lat,lng
+  if(lat===undefined){ m = url.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/); if(m){ lat=parseFloat(m[1]); lng=parseFloat(m[2]); } }
+  // fallback: ?q=lat,lng  atau  ?query=lat,lng  atau  &ll=lat,lng
+  if(lat===undefined){ m = url.match(/[?&](?:q|query|ll|destination)=(-?\d+\.\d+),(-?\d+\.\d+)/); if(m){ lat=parseFloat(m[1]); lng=parseFloat(m[2]); } }
+  if(lat===undefined) return null;
+  // nama dari /place/<nama>/
+  m = url.match(/\/place\/([^/@]+)/);
+  if(m){ try { name = decodeURIComponent(m[1].replace(/\+/g,' ')).trim(); } catch(e){ name = m[1].replace(/\+/g,' '); } }
+  return { lat, lng, name };
+}
+
+document.getElementById('addPaste').onclick = () => {
+  const lines = document.getElementById('paste').value.split('\n');
+  let added=0;
+  for(const ln of lines){
+    const t = ln.trim(); if(!t) continue;
+
+    // 1) Link Google Maps
+    if(/https?:\/\/\S*(google\.[^/]+\/maps|maps\.app\.goo\.gl|goo\.gl\/maps)/.test(t)){
+      const g = parseGmaps(t);
+      if(g){ waypoints.push({ name:g.name || ('Titik '+(waypoints.length+added+1)), lat:g.lat, lng:g.lng }); added++; }
+      continue;
+    }
+
+    // 2) Manual: nama, lat, lng  ATAU  lat, lng
+    const parts = t.split(',').map(s=>s.trim());
+    let name, lat, lng;
+    if(parts.length >= 3){ name=parts[0]; lat=parseFloat(parts[1]); lng=parseFloat(parts[2]); }
+    else if(parts.length === 2){ lat=parseFloat(parts[0]); lng=parseFloat(parts[1]); name='Titik '+(waypoints.length+added+1); }
+    else continue;
+    if(isNaN(lat)||isNaN(lng)) continue;
+    waypoints.push({ name, lat, lng }); added++;
+  }
+  if(added){ document.getElementById('paste').value=''; redraw(); fitAll(); status(added+' titik ditambah'); setTimeout(()=>status(''),1500); }
+  else status('Gak kebaca — paste link Google Maps atau: nama, lat, lng');
+};
+
+document.getElementById('clear').onclick = () => {
+  waypoints = []; redraw();
+  curLine = []; if(map.getSource('route')) map.getSource('route').setData(emptyLine());
+};
+
+document.querySelectorAll('#veh button').forEach(b => {
+  b.onclick = () => {
+    if(playing) return;
+    document.querySelectorAll('#veh button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); vehicle = b.dataset.v;
+    document.getElementById('vehHint').textContent = VEHICLES[vehicle].hint;
+    setVehicleIcon();
+  };
+});
+
+const ANIM_HINTS = {
+  follow: 'Follow: kamera nempel di ujung garis yang lagi kegambar.',
+  cinematic: 'Cinematic 3D: kamera miring + muter ngikutin arah jalan. Paling dramatis.',
+  overview: 'Overview: kamera diam lihat seluruh rute, garis kegambar pelan-pelan.'
+};
+document.querySelectorAll('#anim button').forEach(b => {
+  b.onclick = () => {
+    if(playing) return;
+    document.querySelectorAll('#anim button').forEach(x=>x.classList.remove('on'));
+    b.classList.add('on'); animStyle = b.dataset.a;
+    document.getElementById('animHint').textContent = ANIM_HINTS[animStyle];
+  };
+});
+
+const spd=document.getElementById('spd'), zoom=document.getElementById('zoom'), pitch=document.getElementById('pitch');
+spd.oninput = ()=> document.getElementById('spdV').textContent = parseFloat(spd.value).toFixed(1)+'×';
+zoom.oninput = ()=> document.getElementById('zoomV').textContent = zoom.value;
+pitch.oninput = ()=> { document.getElementById('pitchV').textContent = pitch.value+'°'; map.setPitch(parseFloat(pitch.value)); };
+
+document.getElementById('play').onclick = play;
+document.getElementById('rec').onclick = toggleRec;
+document.getElementById('basemap').onchange = (e) => setBasemap(e.target.value);
+</script>
+</body>
+</html>
