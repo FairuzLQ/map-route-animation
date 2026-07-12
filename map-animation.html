@@ -10,6 +10,8 @@
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <!-- Turf.js buat hitung panjang & potong garis -->
 <script src="https://unpkg.com/@turf/turf@6.5.0/turf.min.js"></script>
+<!-- Three.js buat model kendaraan 3D (ban muter, belok mulus) -->
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
 
 <style>
   :root { --bg:#0f1115; --panel:#171a21; --line:#262b36; --acc:#4f9dff; --txt:#e7ebf3; --mut:#8b94a7; }
@@ -186,11 +188,15 @@ map.addControl(new maplibregl.NavigationControl(), 'top-left');
 
 let waypoints = [];   // {name, lng, lat}
 // kendaraan menentukan bentuk rute + ikon yang jalan di peta
+// msPerKm = berapa milidetik animasi per kilometer. Makin kecil = makin ngebut.
+// Pesawat kecil banget karena jaraknya bisa ribuan km (antar negara/pulau).
+// msPerKm = milidetik animasi per km (kecil = ngebut). maxMs = durasi maksimal
+// biar jarak jauh gak kelamaan. Pesawat cap-nya rendah -> tetap ngebut walau ribuan km.
 const VEHICLES = {
-  motor:   { emoji:'🏍️', route:'road',     hint:'Motor: ikut jalan asli (OSRM).' },
-  mobil:   { emoji:'🚗', route:'road',     hint:'Mobil: ikut jalan asli (OSRM).' },
-  kereta:  { emoji:'🚆', route:'straight', hint:'Kereta: garis lurus antar titik (rel gak ada di data).' },
-  pesawat: { emoji:'✈️', route:'curve',    hint:'Pesawat: garis lengkung cinematic antar titik.' }
+  motor:   { emoji:'🏍️', route:'road',     msPerKm:2600, maxMs:22000, hint:'Motor: ikut jalan asli (OSRM). Kecepatan santai.' },
+  mobil:   { emoji:'🚗', route:'road',     msPerKm:2200, maxMs:22000, hint:'Mobil: ikut jalan asli (OSRM).' },
+  kereta:  { emoji:'🚆', route:'straight', msPerKm:700,  maxMs:15000, hint:'Kereta: garis lurus, lebih ngebut dari mobil.' },
+  pesawat: { emoji:'✈️', route:'curve',    msPerKm:120,  maxMs:9000,  hint:'Pesawat: ngebut buat jarak jauh antar negara/pulau.' }
 };
 let vehicle = 'mobil';
 let animStyle = 'follow';
@@ -228,6 +234,9 @@ function addOverlays(){
     map.addLayer({ id:'veh-layer', type:'symbol', source:'veh',
       layout:{ 'icon-image':'vehicle', 'icon-size':1, 'icon-allow-overlap':true, 'icon-ignore-placement':true } });
   }
+  if(!map.getLayer('veh-3d') && typeof THREE !== 'undefined'){
+    map.addLayer(vehicle3DLayer);
+  }
   redraw();
 }
 
@@ -246,6 +255,97 @@ function setVehicleIcon(){
   if(map.hasImage('vehicle')) map.updateImage('vehicle', img);
   else map.addImage('vehicle', img);
 }
+
+/* ============ KENDARAAN 3D (Three.js custom layer) ============ */
+// vehState di-update tiap frame animasi. Layer 3D baca ini buat posisi/arah.
+const vehState = { lng:0, lat:0, angle:0, visible:false, spin:0, kind:'mobil' };
+const VEH3D = { car:null, moto:null }; // group Three.js, wheels[] buat muter
+
+function mat(hex){ return new THREE.MeshLambertMaterial({ color:hex }); }
+function wheel(r, w){
+  // cylinder default sumbu Y -> kita mau ban muter di bidang XZ, sumbu putar = Y (kiri-kanan)
+  const g = new THREE.CylinderGeometry(r, r, w, 20);
+  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color:0x111318 }));
+  m.rotation.z = Math.PI/2; // rebahkan supaya sumbu jadi X? -> lihat penempatan di bawah
+  return m;
+}
+
+// Model dibangun: +X = MAJU, +Y = KIRI, +Z = ATAS. (nanti transform ke peta)
+function buildCar(color){
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(4.4, 1.9, 0.9), mat(color));
+  body.position.z = 0.75; g.add(body);
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.65, 0.8), mat(0x1b2330));
+  cabin.position.set(-0.2, 0, 1.5); g.add(cabin);
+  // 4 ban: sumbu putar = Y (kiri-kanan). Cylinder sumbu Y default -> rotate X 90° biar rebah jadi sumbu Y?
+  const wheels = [];
+  const positions = [[1.4,1.0],[1.4,-1.0],[-1.4,1.0],[-1.4,-1.0]];
+  for(const [x,y] of positions){
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.5,0.5,0.35,20), new THREE.MeshLambertMaterial({color:0x0c0e12}));
+    w.rotation.x = Math.PI/2;          // sumbu cylinder Y -> jadi sumbu Z? test; kita mau sumbu putar sejajar Y (kiri-kanan)
+    w.position.set(x, y, 0.5);
+    g.add(w); wheels.push(w);
+  }
+  g.userData.wheels = wheels;
+  return g;
+}
+function buildMoto(color){
+  const g = new THREE.Group();
+  const frame = new THREE.Mesh(new THREE.BoxGeometry(2.2, 0.4, 0.5), mat(color));
+  frame.position.z = 0.75; g.add(frame);
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.5, 0.25), mat(0x1b2330));
+  seat.position.set(-0.5, 0, 1.05); g.add(seat);
+  const tank = new THREE.Mesh(new THREE.BoxGeometry(0.7,0.5,0.4), mat(color));
+  tank.position.set(0.3,0,1.05); g.add(tank);
+  const wheels = [];
+  for(const x of [1.0, -1.0]){
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,0.22,20), new THREE.MeshLambertMaterial({color:0x0c0e12}));
+    w.rotation.x = Math.PI/2;
+    w.position.set(x, 0, 0.55);
+    g.add(w); wheels.push(w);
+  }
+  g.userData.wheels = wheels;
+  return g;
+}
+
+const SIZE_BOOST = 22; // model dalam meter itu kekecilan di peta; besarkan biar kebaca
+const vehicle3DLayer = {
+  id: 'veh-3d', type:'custom', renderingMode:'3d',
+  onAdd(m, gl){
+    this.camera = new THREE.Camera();
+    this.scene = new THREE.Scene();
+    this.scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+    const dir = new THREE.DirectionalLight(0xffffff, 0.75); dir.position.set(0.4, -0.7, 1); this.scene.add(dir);
+    VEH3D.car = buildCar(0xff2d55); VEH3D.moto = buildMoto(0x2d7dff);
+    this.holder = new THREE.Group(); this.scene.add(this.holder);
+    this.renderer = new THREE.WebGLRenderer({ canvas:m.getCanvas(), context:gl, antialias:true });
+    this.renderer.autoClear = false;
+    this.last = performance.now();
+  },
+  render(gl, matrix){
+    const now = performance.now(); const dt = (now - this.last)/1000; this.last = now;
+    if(!vehState.visible){ return; }
+    // pilih model
+    const model = vehState.kind === 'motor' ? VEH3D.moto : VEH3D.car;
+    this.holder.clear(); this.holder.add(model);
+    // ban muter (proporsional kecepatan spin)
+    const wheels = model.userData.wheels || [];
+    for(const w of wheels) w.rotation.y += vehState.spin * dt;
+    // arah hadap (belok) — mulus, di-set dari luar sbg vehState.angle (radian, model +X = maju)
+    model.rotation.set(0,0,vehState.angle);
+
+    const merc = maplibregl.MercatorCoordinate.fromLngLat([vehState.lng, vehState.lat], 0);
+    const s = merc.meterInMercatorCoordinateUnits() * SIZE_BOOST;
+    const l = new THREE.Matrix4()
+      .makeTranslation(merc.x, merc.y, merc.z)
+      .scale(new THREE.Vector3(s, -s, s));   // -Y: peta utara = model +Y
+    this.camera.projectionMatrix = new THREE.Matrix4().fromArray(matrix).multiply(l);
+    this.renderer.resetState();
+    this.renderer.render(this.scene, this.camera);
+    map.triggerRepaint();
+  }
+};
+
 map.on('load', addOverlays);
 
 /* ---------- pilihan tekstur peta ---------- */
@@ -402,7 +502,9 @@ async function play(){
   const speed = parseFloat(document.getElementById('spd').value);
   const zoom = parseFloat(document.getElementById('zoom').value);
   const basePitch = parseFloat(document.getElementById('pitch').value);
-  const durMs = Math.max(3000, (total * 2600) / speed);
+  // durasi ikut jenis kendaraan (pesawat ngebut, mobil santai); min 2.5s
+  const vconf = VEHICLES[vehicle];
+  const durMs = Math.min(vconf.maxMs || 22000, Math.max(2500, (total * (vconf.msPerKm || 2600)) / speed));
 
   status('Animasi…');
   curLine = []; map.getSource('route').setData(emptyLine());
@@ -419,8 +521,12 @@ async function play(){
   }
   if(cancelReq) return finishPlay('Dibatalin');
 
+  const use3D = (vehicle === 'motor' || vehicle === 'mobil'); // 3D buat motor/mobil, emoji buat kereta/pesawat
+  if(use3D && map.getSource('veh')) map.getSource('veh').setData(emptyFC()); // sembunyikan emoji
+  let vehHeading = (()=>{ try{ const b=turf.bearing(turf.point(full[0]), turf.point(full[1]||full[0])); return isNaN(b)?0:b; }catch(e){ return 0; } })();
+
   const t0 = performance.now();
-  let lastHead = full[0], curBearing = map.getBearing();
+  let curBearing = map.getBearing();
   await new Promise(res => {
     function frame(now){
       if(cancelReq) return res();
@@ -431,27 +537,35 @@ async function play(){
       curLine = drawn;
       map.getSource('route').setData({ type:'Feature', geometry:{ type:'LineString', coordinates:drawn } });
       const head = drawn[drawn.length-1];
-      // ikon kendaraan mengikuti ujung garis
-      if(map.getSource('veh')) map.getSource('veh').setData({ type:'Feature', geometry:{ type:'Point', coordinates:head } });
+
+      // arah gerak (look-ahead) — buat hadap kendaraan + kamera cinematic
+      let tgt = null;
+      try {
+        const lookKm = Math.max(0.03, total * 0.03);
+        const aheadPt = turf.along(line, Math.min(total, dist + lookKm), { units:'kilometers' }).geometry.coordinates;
+        const b = turf.bearing(turf.point(head), turf.point(aheadPt));
+        if(!isNaN(b) && (aheadPt[0]!==head[0] || aheadPt[1]!==head[1])) tgt = b;
+      } catch(e){}
+
+      if(use3D){
+        if(tgt !== null) vehHeading += angleDelta(vehHeading, tgt) * 0.18; // belok mulus
+        vehState.kind = vehicle;
+        vehState.lng = head[0]; vehState.lat = head[1];
+        vehState.angle = (90 - vehHeading) * Math.PI/180;
+        vehState.spin = 16 * speed;
+        vehState.visible = true;
+      } else if(map.getSource('veh')){
+        map.getSource('veh').setData({ type:'Feature', geometry:{ type:'Point', coordinates:head } });
+      }
 
       if(animStyle === 'follow'){
         map.jumpTo({ center:head, zoom, pitch:basePitch, bearing:0 });
       } else if(animStyle === 'cinematic'){
-        // arah kamera pakai LOOK-AHEAD: lihat arah agak jauh ke depan,
-        // bukan antar-titik terdekat -> tikungan rapat gak bikin patah2.
-        try {
-          const lookKm = Math.max(0.25, total * 0.06);
-          const aheadDist = Math.min(total, dist + lookKm);
-          const aheadPt = turf.along(line, aheadDist, { units:'kilometers' }).geometry.coordinates;
-          const tgt = turf.bearing(turf.point(head), turf.point(aheadPt));
-          // rotasi halus (lerp kecil) biar gak nyentak
-          if(!isNaN(tgt)) curBearing += angleDelta(curBearing, tgt) * 0.05;
-        } catch(e){}
+        if(tgt !== null) curBearing += angleDelta(curBearing, tgt) * 0.05;
         map.jumpTo({ center:head, zoom, pitch:Math.max(basePitch,55), bearing:curBearing });
       }
       // overview: kamera dibiarkan (tidak di-jumpTo)
 
-      lastHead = head;
       if(p < 1) requestAnimationFrame(frame); else res();
     }
     requestAnimationFrame(frame);
@@ -463,7 +577,8 @@ async function play(){
 function finishPlay(msg){
   playing = false; cancelReq = false;
   setPlayBtn(false);
-  if(map.getSource('veh')) map.getSource('veh').setData(emptyFC()); // sembunyikan ikon
+  if(map.getSource('veh')) map.getSource('veh').setData(emptyFC()); // sembunyikan emoji
+  vehState.visible = false; map.triggerRepaint();                   // sembunyikan model 3D
   renderList();
   status(msg); setTimeout(()=>status(''), 1500);
 }

@@ -11,7 +11,9 @@ Dibangun pakai **MapLibre GL JS** + basemap raster gratis (CARTO / OSM / Esri / 
 - 🗺️ **Peta jalan asli** — 6 tekstur: Voyager, Light, Dark, Satellite, OSM, Topo (tinggal pilih, ganti instan)
 - 📍 **Tambah titik** — paste **link Google Maps** (nama + koordinat diekstrak otomatis) atau ketik `Nama, lat, lng`, atau klik langsung di peta
 - ↕️ **Urutkan ulang** titik dengan drag-and-drop
-- 🚗 **Pilih kendaraan** — Motor / Mobil (ikut jalan asli via OSRM) · Kereta (garis lurus) · Pesawat (garis lengkung). Ikon kendaraannya jalan di sepanjang rute
+- 🚗 **Pilih kendaraan** — Motor / Mobil (ikut jalan asli via OSRM) · Kereta (garis lurus) · Pesawat (garis lengkung)
+  - Motor & Mobil pakai **model 3D** (Three.js) — ban muter, ngadep + belok mulus ngikutin jalan
+  - Tiap kendaraan punya **kecepatan sendiri**: pesawat ngebut buat jarak jauh antar negara/pulau, mobil santai buat lokal
 - 🎬 **Gaya animasi** — Follow · Cinematic 3D (kamera miring + muter) · Overview
 - 🎚️ Atur kecepatan, zoom, dan kemiringan (pitch) kamera
 - ⏺️ **Record ke video** (WebM/MP4) langsung dari browser — tanpa server render
