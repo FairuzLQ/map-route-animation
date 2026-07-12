@@ -176,7 +176,11 @@ const map = new maplibregl.Map({
     version: 8,
     glyphs: GLYPHS,
     sources: { base: { type:'raster', tiles:[BASEMAPS[DEFAULT_BASEMAP].url], tileSize:256, attribution: BASEMAPS[DEFAULT_BASEMAP].attr } },
-    layers: [{ id:'base-layer', type:'raster', source:'base' }]
+    // background netral: pas tile belum ke-load, peta keliatan "lagi loading" bukan layar hitam
+    layers: [
+      { id:'bg', type:'background', paint:{ 'background-color':'#dfe6ea' } },
+      { id:'base-layer', type:'raster', source:'base' }
+    ]
   },
   center: [106.80, -6.597],
   zoom: 12,
