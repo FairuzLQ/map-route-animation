@@ -9,15 +9,19 @@ Dibangun pakai **MapLibre GL JS** + basemap raster gratis (CARTO / OSM / Esri / 
 ## Fitur
 
 - 🗺️ **Peta jalan asli** — 6 tekstur: Voyager, Light, Dark, Satellite, OSM, Topo (tinggal pilih, ganti instan)
-- 📍 **Tambah titik** — paste **link Google Maps** (nama + koordinat diekstrak otomatis) atau ketik `Nama, lat, lng`, atau klik langsung di peta
-- ↕️ **Urutkan ulang** titik dengan drag-and-drop
-- 🚗 **Pilih kendaraan** — Motor / Mobil (ikut jalan asli via OSRM) · Kereta (garis lurus) · Pesawat (garis lengkung)
-  - Motor & Mobil pakai **model 3D** (Three.js) — ban muter, ngadep + belok mulus ngikutin jalan
+- 🏙️ **Gedung 3D** opsional (kelihatan pas peta dimiringkan) — bikin view kota kayak sinematik
+- 🔍 **Cari tempat** langsung dari nama (geocoding OpenStreetMap) — gak perlu buka Google Maps
+- 📍 **Tambah titik** — cari, paste **link Google Maps** (nama + koordinat auto), ketik `Nama, lat, lng`, atau klik peta
+- ↕️ **Urutkan ulang** titik dengan drag-and-drop · **⇅ Balik arah** buat reverse
+- 🚗 **Pilih kendaraan** — semua pakai **model 3D** (Three.js): Motor 🏍️, Mobil 🚗, Kereta 🚆, Pesawat ✈️
+  - Ban muter, ngadep + belok mulus ngikutin rute; pesawat terbang di ketinggian
   - Tiap kendaraan punya **kecepatan sendiri**: pesawat ngebut buat jarak jauh antar negara/pulau, mobil santai buat lokal
+- 🎨 **Warna rute** bisa diganti sesuka hati
 - 🎬 **Gaya animasi** — Follow · Cinematic 3D (kamera miring + muter) · Overview
 - 🎚️ Atur kecepatan, zoom, dan kemiringan (pitch) kamera
 - 💾 **Auto-save** — titik & setting kesimpen otomatis, gak hilang pas refresh
-- 📏 **Total jarak** rute ditampilkan · **⇅ Balik arah** buat reverse rute
+- 🔗 **Share link** — rute dibungkus jadi URL, tinggal kirim ke orang
+- 📏 **Total jarak** rute ditampilkan
 - ⏺️ **Record ke video** (WebM/MP4) langsung dari browser — tanpa server render
 - ⏹️ Batalin animasi kapan aja
 

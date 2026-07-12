@@ -48,6 +48,11 @@
   .field label { font-size:11px; color:var(--mut); display:flex; justify-content:space-between; }
   input[type=range] { width:100%; accent-color:var(--acc); }
   select { width:100%; background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px; font-size:12px; cursor:pointer; }
+  input[type=text] { background:var(--bg); color:var(--txt); border:1px solid var(--line); border-radius:8px; padding:8px; font-size:12px; }
+  input[type=text]:focus { outline:none; border-color:var(--acc); }
+  input[type=color] { width:38px; height:28px; padding:0; border:1px solid var(--line); border-radius:6px; background:var(--bg); cursor:pointer; }
+  input[type=checkbox] { accent-color:var(--acc); }
+  .chk { display:flex; align-items:center; gap:8px; margin-top:10px; font-size:12px; color:var(--mut); cursor:pointer; }
   .seg { display:flex; background:var(--bg); border:1px solid var(--line); border-radius:8px; overflow:hidden; }
   .seg button { border:0; border-radius:0; flex:1; }
   .seg.vseg { flex-direction:column; }
@@ -74,8 +79,12 @@
     </div>
 
     <div class="sec">
-      <h2>Tambah titik (paste koordinat)</h2>
-      <textarea id="paste" placeholder="Paste link Google Maps (nama & koordinat auto), ATAU tulis manual 'Nama, lat, lng' — satu per baris. Contoh:
+      <h2>Tambah titik</h2>
+      <div class="row" style="margin-bottom:8px">
+        <input id="searchBox" type="text" placeholder="🔍 Cari tempat (mis. Monas Jakarta)" style="flex:1">
+        <button id="searchBtn">Cari</button>
+      </div>
+      <textarea id="paste" placeholder="…atau paste link Google Maps (nama & koordinat auto) / tulis 'Nama, lat, lng' — satu per baris. Contoh:
 https://www.google.com/maps/place/Sate+Maranggi/@-6.65,106.88,17z/...
 Kafe A, -6.5971, 106.8060"></textarea>
       <div class="row" style="margin-top:8px">
@@ -91,6 +100,7 @@ Kafe A, -6.5971, 106.8060"></textarea>
       <div class="hint" id="listHint">Belum ada titik. Paste koordinat di atas atau klik peta. Nanti <b>tahan ⠿ lalu geser</b> buat urutkan.</div>
       <div class="row" style="margin-top:8px">
         <button id="reverse" title="urutan titik dibalik">⇅ Balik arah</button>
+        <button id="share" title="salin link berisi rute ini">🔗 Share link</button>
       </div>
     </div>
 
@@ -115,6 +125,7 @@ Kafe A, -6.5971, 106.8060"></textarea>
         <option value="osm">OSM klasik — peta OpenStreetMap</option>
         <option value="topo">Topo — kontur/topografi</option>
       </select>
+      <label class="chk"><input type="checkbox" id="bldg3d"> Gedung 3D <span style="opacity:.7">(kelihatan pas peta dimiringkan)</span></label>
     </div>
 
     <div class="sec">
@@ -128,6 +139,10 @@ Kafe A, -6.5971, 106.8060"></textarea>
     </div>
 
     <div class="sec">
+      <div class="field" style="flex-direction:row; align-items:center; justify-content:space-between">
+        <label style="margin:0">Warna rute</label>
+        <input type="color" id="routeColor" value="#4f9dff">
+      </div>
       <div class="field">
         <label>Kecepatan animasi <span id="spdV">1.0×</span></label>
         <input type="range" id="spd" min="0.3" max="3" step="0.1" value="1">
@@ -146,8 +161,9 @@ Kafe A, -6.5971, 106.8060"></textarea>
       <div class="row">
         <button id="play" class="primary" style="flex:1">▶ Play</button>
         <button id="rec" class="rec">● Record</button>
+        <select id="recFmt" style="width:auto" title="format video"><option value="webm">WebM</option><option value="mp4">MP4</option></select>
       </div>
-      <div class="hint">Klik Record dulu → lalu Play → klik Record lagi buat stop &amp; download WebM.</div>
+      <div class="hint">Klik Record dulu → lalu Play → klik Record lagi buat stop &amp; download. MP4 buat IG/TikTok (kalau browser dukung).</div>
     </div>
   </div>
 </div>
@@ -210,31 +226,43 @@ let cancelReq = false;
 let restored = false; // true setelah state dari localStorage dimuat
 
 /* ---------- simpan/muat otomatis (localStorage) ---------- */
+function stateObj(){
+  return { v: vehicle, a: animStyle,
+    b: document.getElementById('basemap').value,
+    c: document.getElementById('routeColor').value,
+    bldg: document.getElementById('bldg3d').checked,
+    f: document.getElementById('recFmt').value,
+    wp: waypoints.map(w => [ +w.lat.toFixed(5), +w.lng.toFixed(5), w.name ]) };
+}
+function applyState(s){
+  if(!s) return;
+  if(Array.isArray(s.wp)) waypoints = s.wp
+    .map(w => Array.isArray(w) ? { lat:w[0], lng:w[1], name:w[2] } : w)
+    .filter(w => w && typeof w.lat==='number' && typeof w.lng==='number');
+  if(s.v && VEHICLES[s.v]) vehicle = s.v;
+  if(s.a) animStyle = s.a;
+  if(s.b && BASEMAPS[s.b]){ document.getElementById('basemap').value = s.b; setBasemap(s.b); }
+  if(s.c) document.getElementById('routeColor').value = s.c;
+  if(s.f) document.getElementById('recFmt').value = s.f;
+  if(s.bldg) document.getElementById('bldg3d').checked = true;
+}
 function persist(){
   if(!restored) return; // jangan nimpa storage pas init
-  try {
-    localStorage.setItem('mapAnimState', JSON.stringify({
-      v: vehicle, a: animStyle,
-      b: document.getElementById('basemap').value,
-      wp: waypoints
-    }));
-  } catch(e){}
+  try { localStorage.setItem('mapAnimState', JSON.stringify(stateObj())); } catch(e){}
 }
 function loadState(){
-  try {
-    const s = JSON.parse(localStorage.getItem('mapAnimState') || 'null');
-    if(s){
-      if(Array.isArray(s.wp)) waypoints = s.wp.filter(w => w && typeof w.lat==='number' && typeof w.lng==='number');
-      if(s.v && VEHICLES[s.v]) vehicle = s.v;
-      if(s.a) animStyle = s.a;
-      if(s.b && BASEMAPS[s.b]){ document.getElementById('basemap').value = s.b; setBasemap(s.b); }
-    }
-  } catch(e){}
+  let s = null;
+  // prioritas: share link di URL (#r=...), lalu localStorage
+  if(location.hash.startsWith('#r=')) s = decodeState(location.hash.slice(3));
+  if(!s){ try { s = JSON.parse(localStorage.getItem('mapAnimState') || 'null'); } catch(e){} }
+  applyState(s);
   restored = true;
-  // sinkronkan tampilan tombol dengan state
+  // sinkronkan tampilan dengan state
   document.querySelectorAll('#veh button').forEach(x => x.classList.toggle('on', x.dataset.v === vehicle));
   document.querySelectorAll('#anim button').forEach(x => x.classList.toggle('on', x.dataset.a === animStyle));
   document.getElementById('vehHint').textContent = VEHICLES[vehicle].hint;
+  applyRouteColor();
+  if(document.getElementById('bldg3d').checked) setBuildings3D(true);
   setVehicleIcon();
   redraw();
   if(waypoints.length) fitAll();
@@ -296,7 +324,7 @@ function setVehicleIcon(){
 /* ============ KENDARAAN 3D (Three.js custom layer) ============ */
 // vehState di-update tiap frame animasi. Layer 3D baca ini buat posisi/arah.
 const vehState = { lng:0, lat:0, angle:0, visible:false, spin:0, kind:'mobil' };
-const VEH3D = { car:null, moto:null }; // group Three.js, wheels[] buat muter
+const VEH3D = { mobil:null, motor:null, pesawat:null, kereta:null }; // group Three.js per kendaraan
 
 function mat(hex){ return new THREE.MeshLambertMaterial({ color:hex });
 }
@@ -338,8 +366,40 @@ function buildMoto(color){
   g.userData.wheels = wheels;
   return g;
 }
+function buildPlane(color){
+  const g = new THREE.Group();
+  const fuse = new THREE.Mesh(new THREE.CylinderGeometry(0.55,0.55,6,16), mat(color));
+  fuse.rotation.z = Math.PI/2; fuse.position.z = 0.6; g.add(fuse); // badan sepanjang X
+  const nose = new THREE.Mesh(new THREE.ConeGeometry(0.55,1.2,16), mat(color));
+  nose.rotation.z = -Math.PI/2; nose.position.set(3.4,0,0.6); g.add(nose);
+  const wing = new THREE.Mesh(new THREE.BoxGeometry(1.5,7.5,0.18), mat(0xdfe6ea));
+  wing.position.set(0,0,0.6); g.add(wing);
+  const tailW = new THREE.Mesh(new THREE.BoxGeometry(1,3,0.15), mat(0xdfe6ea));
+  tailW.position.set(-2.7,0,0.7); g.add(tailW);
+  const fin = new THREE.Mesh(new THREE.BoxGeometry(1,0.15,1.2), mat(color));
+  fin.position.set(-2.7,0,1.3); g.add(fin);
+  g.userData.wheels = []; // terbang, gak ada ban muter
+  return g;
+}
+function buildTrain(color){
+  const g = new THREE.Group();
+  const body = new THREE.Mesh(new THREE.BoxGeometry(7,2.2,2.4), mat(color));
+  body.position.z = 1.6; g.add(body);
+  const cab = new THREE.Mesh(new THREE.BoxGeometry(1.4,2.2,1.2), mat(0x1b2330));
+  cab.position.set(2.9,0,2.4); g.add(cab); // kaca depan gelap
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(7.02,2.22,0.4), mat(0xffd23f));
+  stripe.position.z = 1.2; g.add(stripe);
+  const wheels = [];
+  for(const x of [2.2,0,-2.2]) for(const y of [1.15,-1.15]){
+    const w = new THREE.Mesh(new THREE.CylinderGeometry(0.6,0.6,0.25,16), new THREE.MeshLambertMaterial({color:0x0c0e12}));
+    w.rotation.x = Math.PI/2; w.position.set(x,y,0.6); g.add(w); wheels.push(w);
+  }
+  g.userData.wheels = wheels;
+  return g;
+}
 
-const SIZE_BOOST = 22; // model dalam meter itu kekecilan di peta; besarkan biar kebaca
+const SIZE_BOOST = 22;   // model dalam meter itu kekecilan di peta; besarkan biar kebaca
+const PLANE_ALT = 170;   // pesawat terbang -> kasih ketinggian biar keliatan melayang
 const vehicle3DLayer = {
   id: 'veh-3d', type:'custom', renderingMode:'3d',
   onAdd(m, gl){
@@ -347,7 +407,8 @@ const vehicle3DLayer = {
     this.scene = new THREE.Scene();
     this.scene.add(new THREE.AmbientLight(0xffffff, 0.85));
     const dir = new THREE.DirectionalLight(0xffffff, 0.75); dir.position.set(0.4, -0.7, 1); this.scene.add(dir);
-    VEH3D.car = buildCar(0xff2d55); VEH3D.moto = buildMoto(0x2d7dff);
+    VEH3D.mobil = buildCar(0xff2d55); VEH3D.motor = buildMoto(0x2d7dff);
+    VEH3D.pesawat = buildPlane(0x2f6fd6); VEH3D.kereta = buildTrain(0xc0392b);
     this.holder = new THREE.Group(); this.scene.add(this.holder);
     this.renderer = new THREE.WebGLRenderer({ canvas:m.getCanvas(), context:gl, antialias:true });
     this.renderer.autoClear = false;
@@ -356,17 +417,20 @@ const vehicle3DLayer = {
   render(gl, matrix){
     const now = performance.now(); const dt = (now - this.last)/1000; this.last = now;
     if(!vehState.visible){ return; }
-    // pilih model
-    const model = vehState.kind === 'motor' ? VEH3D.moto : VEH3D.car;
+    // pilih model sesuai kendaraan
+    const model = VEH3D[vehState.kind] || VEH3D.mobil;
     this.holder.clear(); this.holder.add(model);
-    // ban muter (proporsional kecepatan spin)
+    // ban muter (proporsional kecepatan spin) — pesawat gak punya
     const wheels = model.userData.wheels || [];
     for(const w of wheels) w.rotation.y += vehState.spin * dt;
     // arah hadap (belok) — mulus, di-set dari luar sbg vehState.angle (radian, model +X = maju)
     model.rotation.set(0,0,vehState.angle);
 
-    const merc = maplibregl.MercatorCoordinate.fromLngLat([vehState.lng, vehState.lat], 0);
-    const s = merc.meterInMercatorCoordinateUnits() * SIZE_BOOST;
+    const alt = vehState.kind === 'pesawat' ? PLANE_ALT : 0;
+    const merc = maplibregl.MercatorCoordinate.fromLngLat([vehState.lng, vehState.lat], alt);
+    // pesawat/kereta dipakai buat jarak jauh (zoom out) -> boost lebih biar kebaca
+    const boost = SIZE_BOOST * (vehState.kind === 'pesawat' ? 1.8 : vehState.kind === 'kereta' ? 1.2 : 1);
+    const s = merc.meterInMercatorCoordinateUnits() * boost;
     const l = new THREE.Matrix4()
       .makeTranslation(merc.x, merc.y, merc.z)
       .scale(new THREE.Vector3(s, -s, s));   // -Y: peta utara = model +Y
@@ -560,7 +624,7 @@ async function play(){
   }
   if(cancelReq) return finishPlay('Dibatalin');
 
-  const use3D = (vehicle === 'motor' || vehicle === 'mobil'); // 3D buat motor/mobil, emoji buat kereta/pesawat
+  const use3D = (typeof THREE !== 'undefined' && map.getLayer('veh-3d')); // model 3D buat semua; emoji cuma fallback
   if(use3D && map.getSource('veh')) map.getSource('veh').setData(emptyFC()); // sembunyikan emoji
   let vehHeading = (()=>{ try{ const b=turf.bearing(turf.point(full[0]), turf.point(full[1]||full[0])); return isNaN(b)?0:b; }catch(e){ return 0; } })();
 
@@ -639,8 +703,11 @@ let recorder=null, chunks=[], recExt='webm';
 // cari format yang didukung browser (Chrome=webm, Safari=mp4)
 function pickMime(){
   if(typeof MediaRecorder === 'undefined') return null;
-  const cands = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm','video/mp4;codecs=h264','video/mp4'];
-  for(const c of cands){ if(MediaRecorder.isTypeSupported(c)) return c; }
+  const pref = document.getElementById('recFmt').value; // 'webm' | 'mp4'
+  const webm = ['video/webm;codecs=vp9','video/webm;codecs=vp8','video/webm'];
+  const mp4  = ['video/mp4;codecs=h264','video/mp4'];
+  const order = pref === 'mp4' ? mp4.concat(webm) : webm.concat(mp4);
+  for(const c of order){ if(MediaRecorder.isTypeSupported(c)) return c; }
   return ''; // biarin browser pilih default
 }
 function toggleRec(){
@@ -676,7 +743,8 @@ function toggleRec(){
   };
   recorder.start();
   btn.textContent = '■ Stop & Save';
-  status('Merekam… klik Play');
+  const wantMp4 = document.getElementById('recFmt').value === 'mp4';
+  status(wantMp4 && recExt !== 'mp4' ? 'Merekam (WebM — browser gak dukung MP4)…' : 'Merekam… klik Play');
 }
 
 /* ---------- UI wiring ---------- */
@@ -767,6 +835,62 @@ document.getElementById('reverse').onclick = () => {
   waypoints.reverse(); redraw(); fitAll();
   status('Arah dibalik'); setTimeout(()=>status(''),1200);
 };
+
+/* ---------- warna rute ---------- */
+function applyRouteColor(){
+  const c = document.getElementById('routeColor').value;
+  if(map.getLayer('route-line')) map.setPaintProperty('route-line', 'line-color', c);
+}
+document.getElementById('routeColor').oninput = () => { applyRouteColor(); persist(); };
+
+/* ---------- cari tempat (geocoding Nominatim/OSM, gratis) ---------- */
+async function searchPlace(){
+  const q = document.getElementById('searchBox').value.trim();
+  if(!q){ return; }
+  status('Mencari…');
+  try {
+    const r = await fetch('https://nominatim.openstreetmap.org/search?format=json&limit=1&q=' + encodeURIComponent(q));
+    const j = await r.json();
+    if(!j.length){ status('Tempat gak ketemu'); setTimeout(()=>status(''),1600); return; }
+    const p = j[0];
+    waypoints.push({ name:(p.display_name || q).split(',')[0].trim(), lat:parseFloat(p.lat), lng:parseFloat(p.lon) });
+    document.getElementById('searchBox').value = '';
+    redraw(); fitAll();
+    status('Ditambah: ' + waypoints[waypoints.length-1].name); setTimeout(()=>status(''),1800);
+  } catch(e){ status('Gagal cari (server sibuk, coba lagi)'); setTimeout(()=>status(''),1800); }
+}
+document.getElementById('searchBtn').onclick = searchPlace;
+document.getElementById('searchBox').addEventListener('keydown', e => { if(e.key === 'Enter'){ e.preventDefault(); searchPlace(); } });
+
+/* ---------- share via URL ---------- */
+function encodeState(){ try { return btoa(unescape(encodeURIComponent(JSON.stringify(stateObj())))); } catch(e){ return ''; } }
+function decodeState(str){ try { return JSON.parse(decodeURIComponent(escape(atob(str)))); } catch(e){ return null; } }
+document.getElementById('share').onclick = async () => {
+  if(!waypoints.length){ status('Belum ada titik buat di-share'); return; }
+  const url = location.origin + location.pathname + '#r=' + encodeState();
+  try { await navigator.clipboard.writeText(url); status('🔗 Link disalin ke clipboard'); }
+  catch(e){ prompt('Salin link ini:', url); }
+  setTimeout(()=>status(''),2200);
+};
+
+/* ---------- gedung 3D (vector tiles OpenFreeMap, di bawah rute) ---------- */
+function setBuildings3D(on){
+  if(on){
+    if(!map.getSource('ofm')) map.addSource('ofm', { type:'vector', url:'https://tiles.openfreemap.org/planet' });
+    if(!map.getLayer('buildings-3d')){
+      map.addLayer({ id:'buildings-3d', type:'fill-extrusion', source:'ofm', 'source-layer':'building', minzoom:13,
+        paint:{
+          'fill-extrusion-color':'#c3c8d2',
+          'fill-extrusion-height':['coalesce',['get','render_height'],['get','height'],8],
+          'fill-extrusion-base':['coalesce',['get','render_min_height'],['get','min_height'],0],
+          'fill-extrusion-opacity':0.75
+        } }, 'route-line'); // di bawah rute & titik
+    }
+  } else {
+    if(map.getLayer('buildings-3d')) map.removeLayer('buildings-3d');
+  }
+}
+document.getElementById('bldg3d').onchange = (e) => { setBuildings3D(e.target.checked); persist(); };
 </script>
 </body>
 </html>
