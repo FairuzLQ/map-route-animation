@@ -89,6 +89,9 @@ Kafe A, -6.5971, 106.8060"></textarea>
       <h2 id="listHead">Daftar titik</h2>
       <div id="list"></div>
       <div class="hint" id="listHint">Belum ada titik. Paste koordinat di atas atau klik peta. Nanti <b>tahan ⠿ lalu geser</b> buat urutkan.</div>
+      <div class="row" style="margin-top:8px">
+        <button id="reverse" title="urutan titik dibalik">⇅ Balik arah</button>
+      </div>
     </div>
 
     <div class="sec">
@@ -191,9 +194,7 @@ const map = new maplibregl.Map({
 map.addControl(new maplibregl.NavigationControl(), 'top-left');
 
 let waypoints = [];   // {name, lng, lat}
-// kendaraan menentukan bentuk rute + ikon yang jalan di peta
-// msPerKm = berapa milidetik animasi per kilometer. Makin kecil = makin ngebut.
-// Pesawat kecil banget karena jaraknya bisa ribuan km (antar negara/pulau).
+// kendaraan menentukan bentuk rute + ikon yang jalan di peta.
 // msPerKm = milidetik animasi per km (kecil = ngebut). maxMs = durasi maksimal
 // biar jarak jauh gak kelamaan. Pesawat cap-nya rendah -> tetap ngebut walau ribuan km.
 const VEHICLES = {
@@ -206,6 +207,38 @@ let vehicle = 'mobil';
 let animStyle = 'follow';
 let playing = false;
 let cancelReq = false;
+let restored = false; // true setelah state dari localStorage dimuat
+
+/* ---------- simpan/muat otomatis (localStorage) ---------- */
+function persist(){
+  if(!restored) return; // jangan nimpa storage pas init
+  try {
+    localStorage.setItem('mapAnimState', JSON.stringify({
+      v: vehicle, a: animStyle,
+      b: document.getElementById('basemap').value,
+      wp: waypoints
+    }));
+  } catch(e){}
+}
+function loadState(){
+  try {
+    const s = JSON.parse(localStorage.getItem('mapAnimState') || 'null');
+    if(s){
+      if(Array.isArray(s.wp)) waypoints = s.wp.filter(w => w && typeof w.lat==='number' && typeof w.lng==='number');
+      if(s.v && VEHICLES[s.v]) vehicle = s.v;
+      if(s.a) animStyle = s.a;
+      if(s.b && BASEMAPS[s.b]){ document.getElementById('basemap').value = s.b; setBasemap(s.b); }
+    }
+  } catch(e){}
+  restored = true;
+  // sinkronkan tampilan tombol dengan state
+  document.querySelectorAll('#veh button').forEach(x => x.classList.toggle('on', x.dataset.v === vehicle));
+  document.querySelectorAll('#anim button').forEach(x => x.classList.toggle('on', x.dataset.a === animStyle));
+  document.getElementById('vehHint').textContent = VEHICLES[vehicle].hint;
+  setVehicleIcon();
+  redraw();
+  if(waypoints.length) fitAll();
+}
 
 /* ---------- sources & layers (dipasang ulang tiap ganti style) ---------- */
 let curLine = [];   // simpan garis terakhir biar gak ilang pas ganti tekstur
@@ -265,13 +298,7 @@ function setVehicleIcon(){
 const vehState = { lng:0, lat:0, angle:0, visible:false, spin:0, kind:'mobil' };
 const VEH3D = { car:null, moto:null }; // group Three.js, wheels[] buat muter
 
-function mat(hex){ return new THREE.MeshLambertMaterial({ color:hex }); }
-function wheel(r, w){
-  // cylinder default sumbu Y -> kita mau ban muter di bidang XZ, sumbu putar = Y (kiri-kanan)
-  const g = new THREE.CylinderGeometry(r, r, w, 20);
-  const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color:0x111318 }));
-  m.rotation.z = Math.PI/2; // rebahkan supaya sumbu jadi X? -> lihat penempatan di bawah
-  return m;
+function mat(hex){ return new THREE.MeshLambertMaterial({ color:hex });
 }
 
 // Model dibangun: +X = MAJU, +Y = KIRI, +Z = ATAS. (nanti transform ke peta)
@@ -350,7 +377,7 @@ const vehicle3DLayer = {
   }
 };
 
-map.on('load', addOverlays);
+map.on('load', () => { addOverlays(); loadState(); });
 
 /* ---------- pilihan tekstur peta ---------- */
 // Cukup tukar tile pada source 'base'. Overlay tetap utuh -> gak ada bug render.
@@ -381,6 +408,7 @@ function pointsFC(){
 function redraw(){
   if(map.getSource('pts')){ map.getSource('pts').setData(pointsFC()); map.triggerRepaint(); }
   renderList();
+  persist();
 }
 
 let dragFrom = null;
@@ -389,7 +417,14 @@ function renderList(){
   el.innerHTML = '';
   const head = document.getElementById('listHead');
   const hint = document.getElementById('listHint');
-  if(head) head.textContent = 'Daftar titik' + (waypoints.length ? ` (${waypoints.length})` : '');
+  let distTxt = '';
+  if(waypoints.length >= 2){
+    try {
+      const km = turf.length(turf.lineString(waypoints.map(w=>[w.lng,w.lat])), { units:'kilometers' });
+      distTxt = ' · ~' + (km < 10 ? km.toFixed(1) : Math.round(km)) + ' km';
+    } catch(e){}
+  }
+  if(head) head.textContent = 'Daftar titik' + (waypoints.length ? ` (${waypoints.length})${distTxt}` : '');
   if(hint) hint.innerHTML = waypoints.length
     ? 'Urutkan: <b>tahan ⠿ lalu geser</b>. Klik ✕ buat hapus.'
     : 'Belum ada titik. Paste koordinat di atas atau klik peta.';
@@ -700,7 +735,7 @@ document.querySelectorAll('#veh button').forEach(b => {
     document.querySelectorAll('#veh button').forEach(x=>x.classList.remove('on'));
     b.classList.add('on'); vehicle = b.dataset.v;
     document.getElementById('vehHint').textContent = VEHICLES[vehicle].hint;
-    setVehicleIcon();
+    setVehicleIcon(); persist();
   };
 });
 
@@ -715,6 +750,7 @@ document.querySelectorAll('#anim button').forEach(b => {
     document.querySelectorAll('#anim button').forEach(x=>x.classList.remove('on'));
     b.classList.add('on'); animStyle = b.dataset.a;
     document.getElementById('animHint').textContent = ANIM_HINTS[animStyle];
+    persist();
   };
 });
 
@@ -725,7 +761,12 @@ pitch.oninput = ()=> { document.getElementById('pitchV').textContent = pitch.val
 
 document.getElementById('play').onclick = play;
 document.getElementById('rec').onclick = toggleRec;
-document.getElementById('basemap').onchange = (e) => setBasemap(e.target.value);
+document.getElementById('basemap').onchange = (e) => { setBasemap(e.target.value); persist(); };
+document.getElementById('reverse').onclick = () => {
+  if(playing || waypoints.length < 2){ if(waypoints.length<2) status('Butuh minimal 2 titik'); return; }
+  waypoints.reverse(); redraw(); fitAll();
+  status('Arah dibalik'); setTimeout(()=>status(''),1200);
+};
 </script>
 </body>
 </html>

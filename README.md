@@ -16,6 +16,8 @@ Dibangun pakai **MapLibre GL JS** + basemap raster gratis (CARTO / OSM / Esri / 
   - Tiap kendaraan punya **kecepatan sendiri**: pesawat ngebut buat jarak jauh antar negara/pulau, mobil santai buat lokal
 - 🎬 **Gaya animasi** — Follow · Cinematic 3D (kamera miring + muter) · Overview
 - 🎚️ Atur kecepatan, zoom, dan kemiringan (pitch) kamera
+- 💾 **Auto-save** — titik & setting kesimpen otomatis, gak hilang pas refresh
+- 📏 **Total jarak** rute ditampilkan · **⇅ Balik arah** buat reverse rute
 - ⏺️ **Record ke video** (WebM/MP4) langsung dari browser — tanpa server render
 - ⏹️ Batalin animasi kapan aja
 
