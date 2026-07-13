@@ -4,6 +4,8 @@ Tool web sederhana buat bikin **animasi rute point-to-point** di atas peta asli 
 
 Dibangun pakai **MapLibre GL JS** + basemap raster gratis (CARTO / OSM / Esri / OpenTopoMap) + **OSRM** buat routing jalan asli.
 
+**▶️ Coba langsung: https://fairuzlq.github.io/map-route-animation/**
+
 ![preview](preview.png)
 
 ## Fitur
@@ -27,7 +29,7 @@ Dibangun pakai **MapLibre GL JS** + basemap raster gratis (CARTO / OSM / Esri / 
 
 ## Cara pakai
 
-1. Buka `map-animation.html` di browser (paling stabil di **Google Chrome**).
+1. Buka [live demo](https://fairuzlq.github.io/map-route-animation/), atau `index.html` lokal (paling stabil di **Google Chrome**).
 2. Paste koordinat / link Google Maps → **Tambah dari teks** (atau klik peta).
 3. Titik muncul di **Daftar titik** → drag **⠿** buat urutkan, **✕** buat hapus.
 4. Pilih kendaraan, tekstur peta, dan gaya animasi.
