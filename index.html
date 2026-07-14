@@ -190,8 +190,8 @@ Kafe A, -6.5971, 106.8060"></textarea>
         <input type="range" id="pitch" min="0" max="70" step="5" value="0">
       </div>
       <div class="field">
-        <label>Ukuran kendaraan <span id="vsizeV">1.0×</span></label>
-        <input type="range" id="vsize" min="0.4" max="3" step="0.1" value="1">
+        <label>Ukuran kendaraan <span id="vsizeV">2.0×</span></label>
+        <input type="range" id="vsize" min="0.4" max="8" step="0.1" value="2">
       </div>
     </div>
 
@@ -443,7 +443,7 @@ function buildTrain(color){
 }
 
 const SIZE_BOOST = 42;   // ukuran dasar (skala 1.0); user bisa atur lewat slider
-let vehScale = 1;        // pengali ukuran dari slider "Ukuran kendaraan"
+let vehScale = 2;        // pengali ukuran dari slider "Ukuran kendaraan" (default gede)
 const PLANE_ALT = 170;   // pesawat terbang -> kasih ketinggian biar keliatan melayang
 const vehicle3DLayer = {
   id: 'veh-3d', type:'custom', renderingMode:'3d',
