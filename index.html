@@ -191,7 +191,7 @@ Kafe A, -6.5971, 106.8060"></textarea>
       </div>
       <div class="field">
         <label>Ukuran kendaraan <span id="vsizeV">2.0×</span></label>
-        <input type="range" id="vsize" min="0.4" max="8" step="0.1" value="2">
+        <input type="range" id="vsize" min="0.4" max="10" step="0.1" value="2">
       </div>
     </div>
 
@@ -474,7 +474,7 @@ const vehicle3DLayer = {
     const alt = vehState.kind === 'pesawat' ? PLANE_ALT : 0;
     const merc = maplibregl.MercatorCoordinate.fromLngLat([vehState.lng, vehState.lat], alt);
     // pesawat/kereta dipakai buat jarak jauh (zoom out) -> boost lebih biar kebaca
-    const boost = SIZE_BOOST * vehScale * (vehState.kind === 'pesawat' ? 1.8 : vehState.kind === 'kereta' ? 1.2 : 1);
+    const boost = SIZE_BOOST * vehScale * (vehState.kind === 'pesawat' ? 3.8 : vehState.kind === 'kereta' ? 1.6 : 1);
     const s = merc.meterInMercatorCoordinateUnits() * boost;
     const l = new THREE.Matrix4()
       .makeTranslation(merc.x, merc.y, merc.z)
