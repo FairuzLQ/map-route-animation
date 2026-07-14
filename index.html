@@ -189,6 +189,10 @@ Kafe A, -6.5971, 106.8060"></textarea>
         <label>Kemiringan (pitch) <span id="pitchV">0°</span></label>
         <input type="range" id="pitch" min="0" max="70" step="5" value="0">
       </div>
+      <div class="field">
+        <label>Ukuran kendaraan <span id="vsizeV">1.0×</span></label>
+        <input type="range" id="vsize" min="0.4" max="3" step="0.1" value="1">
+      </div>
     </div>
 
     <div class="sec">
@@ -266,6 +270,7 @@ function stateObj(){
     c: document.getElementById('routeColor').value,
     bldg: document.getElementById('bldg3d').checked,
     f: document.getElementById('recFmt').value,
+    sz: vehScale,
     wp: waypoints.map(w => [ +w.lat.toFixed(5), +w.lng.toFixed(5), w.name ]) };
 }
 function applyState(s){
@@ -279,6 +284,11 @@ function applyState(s){
   if(s.c) document.getElementById('routeColor').value = s.c;
   if(s.f) document.getElementById('recFmt').value = s.f;
   if(s.bldg) document.getElementById('bldg3d').checked = true;
+  if(typeof s.sz === 'number'){
+    vehScale = s.sz;
+    document.getElementById('vsize').value = s.sz;
+    document.getElementById('vsizeV').textContent = s.sz.toFixed(1)+'×';
+  }
 }
 function persist(){
   if(!restored) return; // jangan nimpa storage pas init
@@ -432,7 +442,8 @@ function buildTrain(color){
   return g;
 }
 
-const SIZE_BOOST = 22;   // model dalam meter itu kekecilan di peta; besarkan biar kebaca
+const SIZE_BOOST = 42;   // ukuran dasar (skala 1.0); user bisa atur lewat slider
+let vehScale = 1;        // pengali ukuran dari slider "Ukuran kendaraan"
 const PLANE_ALT = 170;   // pesawat terbang -> kasih ketinggian biar keliatan melayang
 const vehicle3DLayer = {
   id: 'veh-3d', type:'custom', renderingMode:'3d',
@@ -463,7 +474,7 @@ const vehicle3DLayer = {
     const alt = vehState.kind === 'pesawat' ? PLANE_ALT : 0;
     const merc = maplibregl.MercatorCoordinate.fromLngLat([vehState.lng, vehState.lat], alt);
     // pesawat/kereta dipakai buat jarak jauh (zoom out) -> boost lebih biar kebaca
-    const boost = SIZE_BOOST * (vehState.kind === 'pesawat' ? 1.8 : vehState.kind === 'kereta' ? 1.2 : 1);
+    const boost = SIZE_BOOST * vehScale * (vehState.kind === 'pesawat' ? 1.8 : vehState.kind === 'kereta' ? 1.2 : 1);
     const s = merc.meterInMercatorCoordinateUnits() * boost;
     const l = new THREE.Matrix4()
       .makeTranslation(merc.x, merc.y, merc.z)
@@ -859,10 +870,11 @@ document.querySelectorAll('#anim button').forEach(b => {
   };
 });
 
-const spd=document.getElementById('spd'), zoom=document.getElementById('zoom'), pitch=document.getElementById('pitch');
+const spd=document.getElementById('spd'), zoom=document.getElementById('zoom'), pitch=document.getElementById('pitch'), vsize=document.getElementById('vsize');
 spd.oninput = ()=> document.getElementById('spdV').textContent = parseFloat(spd.value).toFixed(1)+'×';
 zoom.oninput = ()=> document.getElementById('zoomV').textContent = zoom.value;
 pitch.oninput = ()=> { document.getElementById('pitchV').textContent = pitch.value+'°'; map.setPitch(parseFloat(pitch.value)); };
+vsize.oninput = ()=> { vehScale = parseFloat(vsize.value); document.getElementById('vsizeV').textContent = vehScale.toFixed(1)+'×'; map.triggerRepaint(); persist(); };
 
 document.getElementById('play').onclick = play;
 document.getElementById('rec').onclick = toggleRec;
