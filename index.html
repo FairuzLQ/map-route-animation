@@ -65,17 +65,50 @@
   .veh button.on { background:var(--acc); border-color:var(--acc); }
   .veh button.on span { color:#04122b; font-weight:600; }
   .hint { font-size:10px; color:var(--mut); margin-top:6px; line-height:1.4; }
-  #status { position:absolute; left:12px; bottom:12px; background:rgba(0,0,0,.6); backdrop-filter:blur(6px); padding:6px 12px; border-radius:20px; font-size:11px; color:#fff; display:none; }
+  #status { position:absolute; left:12px; bottom:12px; background:rgba(0,0,0,.6); backdrop-filter:blur(6px); padding:6px 12px; border-radius:20px; font-size:11px; color:#fff; display:none; z-index:20; }
   #status.show { display:block; }
+
+  /* handle bottom-sheet (mobile) — disembunyiin di desktop */
+  #sheetHandle { display:none; position:sticky; top:0; z-index:5; background:var(--panel); border-bottom:1px solid var(--line); padding:6px 12px 10px; }
+  .grabber { width:40px; height:5px; border-radius:3px; background:var(--line); margin:4px auto 8px; }
+  .sheetRow { display:flex; gap:8px; }
+  #sheetToggle { white-space:nowrap; }
+
+  /* ===== RESPONSIVE: layar sempit -> panel jadi bottom-sheet ===== */
+  @media (max-width: 760px) {
+    #app { display:block; height:100dvh; }
+    #map { position:fixed; inset:0; }
+    #side {
+      position:fixed; left:0; right:0; bottom:0; width:auto; max-height:72vh;
+      border-left:0; border-top:1px solid var(--line);
+      border-radius:16px 16px 0 0; box-shadow:0 -10px 30px rgba(0,0,0,.5);
+      transition:transform .28s ease; z-index:10;
+      -webkit-overflow-scrolling:touch;
+    }
+    #side.collapsed { transform: translateY(calc(100% - 88px)); } /* nyisain handle + Play */
+    #sheetHandle { display:block; }
+    /* target sentuh lebih gede di HP */
+    button { padding:11px 12px; font-size:13px; }
+    .veh button { padding:11px 2px; }
+    textarea { height:70px; }
+    #status { bottom:auto; top:12px; left:50%; transform:translateX(-50%); }
+  }
 </style>
 </head>
 <body>
 <div id="app">
   <div id="map"><div id="status"></div></div>
   <div id="side">
+    <div id="sheetHandle">
+      <div class="grabber" id="grabber"></div>
+      <div class="sheetRow">
+        <button id="mPlay" class="primary" style="flex:1">▶ Play</button>
+        <button id="sheetToggle">Kontrol ⌄</button>
+      </div>
+    </div>
     <div class="head">
       <h1>Route Animation</h1>
-      <p>Klik peta buat nambah titik, atau paste koordinat. Peta asli via OpenFreeMap — gratis, tanpa API key.</p>
+      <p><b>1.</b> Tambah titik (cari / contoh) &nbsp;<b>2.</b> Pilih kendaraan &nbsp;<b>3.</b> Play ▶</p>
     </div>
 
     <div class="sec">
@@ -89,6 +122,7 @@ https://www.google.com/maps/place/Sate+Maranggi/@-6.65,106.88,17z/...
 Kafe A, -6.5971, 106.8060"></textarea>
       <div class="row" style="margin-top:8px">
         <button id="addPaste">Tambah dari teks</button>
+        <button id="example" title="isi rute contoh biar langsung nyoba">✨ Contoh</button>
         <button id="clear">Hapus semua</button>
       </div>
       <div class="hint">Paste link Google Maps langsung (buka lokasi di Maps → Share/Bagikan → Copy link). Bisa juga klik kanan lokasi → copy koordinat.</div>
@@ -584,9 +618,11 @@ async function buildRoute(){
 
 /* ---------- animation ---------- */
 function setPlayBtn(isPlaying){
-  const b = document.getElementById('play');
-  if(isPlaying){ b.textContent = '■ Batalin'; b.classList.remove('primary'); b.classList.add('rec'); }
-  else { b.textContent = '▶ Play'; b.classList.add('primary'); b.classList.remove('rec'); }
+  for(const id of ['play','mPlay']){
+    const b = document.getElementById(id); if(!b) continue;
+    if(isPlaying){ b.textContent = '■ Batalin'; b.classList.remove('primary'); b.classList.add('rec'); }
+    else { b.textContent = '▶ Play'; b.classList.add('primary'); b.classList.remove('rec'); }
+  }
 }
 
 async function play(){
@@ -595,6 +631,7 @@ async function play(){
   if(!map.isStyleLoaded() || !map.getSource('route')){ status('Peta lagi loading, coba lagi sebentar'); return; }
   playing = true; cancelReq = false;
   setPlayBtn(true);
+  if(isMobile()) toggleSheet(true); // di HP: tutup panel biar peta kelihatan penuh
   renderList(); // matiin draggable selama play
 
   const full = await buildRoute();
@@ -891,6 +928,35 @@ function setBuildings3D(on){
   }
 }
 document.getElementById('bldg3d').onchange = (e) => { setBuildings3D(e.target.checked); persist(); };
+
+/* ---------- bottom-sheet (mobile) ---------- */
+function isMobile(){ return window.matchMedia('(max-width: 760px)').matches; }
+function toggleSheet(force){
+  const side = document.getElementById('side');
+  const collapsed = force !== undefined ? force : !side.classList.contains('collapsed');
+  side.classList.toggle('collapsed', collapsed);
+  document.getElementById('sheetToggle').textContent = collapsed ? 'Kontrol ⌃' : 'Kontrol ⌄';
+}
+document.getElementById('sheetToggle').onclick = () => toggleSheet();
+document.getElementById('grabber').onclick = () => toggleSheet();
+document.getElementById('mPlay').onclick = () => { play(); };
+
+/* ---------- tombol Contoh: rute jadi biar langsung nyoba ---------- */
+document.getElementById('example').onclick = () => {
+  if(playing) return;
+  waypoints = [
+    { name:'Monas',       lat:-6.1754, lng:106.8272 },
+    { name:'Bundaran HI', lat:-6.1950, lng:106.8231 },
+    { name:'Kota Tua',    lat:-6.1352, lng:106.8133 }
+  ];
+  // pilih mobil + follow biar aman & jelas
+  vehicle = 'mobil';
+  document.querySelectorAll('#veh button').forEach(x => x.classList.toggle('on', x.dataset.v==='mobil'));
+  document.getElementById('vehHint').textContent = VEHICLES.mobil.hint;
+  setVehicleIcon();
+  redraw(); fitAll();
+  status('Contoh dimuat — sekarang klik Play ▶'); setTimeout(()=>status(''), 2600);
+};
 </script>
 </body>
 </html>

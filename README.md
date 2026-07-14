@@ -26,6 +26,8 @@ Dibangun pakai **MapLibre GL JS** + basemap raster gratis (CARTO / OSM / Esri / 
 - 📏 **Total jarak** rute ditampilkan
 - ⏺️ **Record ke video** (WebM/MP4) langsung dari browser — tanpa server render
 - ⏹️ Batalin animasi kapan aja
+- 📱 **Responsive** — di HP panel jadi bottom-sheet yang bisa buka/tutup, peta tetap full-screen
+- ✨ Tombol **Contoh** — sekali klik langsung ada rute jadi buat nyoba
 
 ## Cara pakai
 
